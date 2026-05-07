@@ -9,7 +9,7 @@ import {
   detectProject,
 } from "./context-gatherer.js";
 import { discoverAgentTree } from "./agent-tree-gatherer.js";
-import { linkPrevious } from "./chain-builder.js";
+import { resolveChain } from "./chain-builder.js";
 import { renderJSON, renderContextPrompt, renderMarkdown, renderTable } from "../output/formatter.js";
 
 export type SaveOptions = {
@@ -74,10 +74,7 @@ export async function save(
   try {
     const previousList = await backend.list({ project: projectName, limit: 1 });
     if (previousList.length > 0) {
-      handoff = linkPrevious(handoff, [/* need full handoffs */]);
-      // For auto-linking, we load the last one and set previous_handoff
-      const lastSummary = previousList[0];
-      handoff.previous_handoff = lastSummary.id;
+      handoff.previous_handoff = previousList[0].id;
     }
   } catch {
     // No previous handoffs, skip linking
@@ -102,9 +99,14 @@ export async function load(
   const handoff = await backend.load(opts.idOrLast);
 
   if (opts.chain) {
-    // For now, just return the current one; chain resolution needs the
-    // chain-builder to work with the backend load method
-    return formatOutput(handoff, opts.format || "markdown");
+    const chain = await resolveChain(handoff, async (id: string) => {
+      try { return await backend.load(id); } catch { return null; }
+    });
+    // Combine chain into single context prompt
+    const parts = chain.map((h, i) =>
+      `=== Handoff ${i + 1}/${chain.length}: ${h.title} (${h.status}) ===\n\n${h.body}`,
+    );
+    return parts.join("\n\n");
   }
 
   return formatOutput(handoff, opts.format || "markdown");

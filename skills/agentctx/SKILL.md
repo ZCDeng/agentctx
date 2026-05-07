@@ -48,7 +48,7 @@ agentctx status --last --set blocked
 ## Backends
 - `fs` (default): local `.agentctx/handoffs/` directory
 - `github`: GitHub Issues via `gh` CLI
-- `obsidian`: Obsidian vault (coming soon)
+- `obsidian`: Obsidian vault (REST/CLI/fs three-tier fallback)
 
 ## Configuration
 ```bash

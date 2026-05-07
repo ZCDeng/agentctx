@@ -13,13 +13,14 @@ export function createSaveCommand(): Command {
     .option("--max-depth <n>", "Max agent tree depth (default: 2)", "2")
     .action(async (options) => {
       const cwd = process.cwd();
+      const md = parseInt(options.maxDepth, 10);
       const result = await save(cwd, {
         message: options.message || "No message provided",
         title: options.title,
         labels: options.label,
         backend: options.backend,
         tree: options.tree,
-        maxTreeDepth: parseInt(options.maxDepth, 10),
+        maxTreeDepth: Number.isNaN(md) ? undefined : md,
       });
       console.log(`Saved handoff ${result.id.slice(0, 8)} → ${result.ref}`);
     });

@@ -2,8 +2,10 @@ import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync } from 
 import { join as pjoin, basename } from "node:path";
 import { homedir } from "node:os";
 import { exec, execOk } from "../utils/exec.js";
-import { serialize, parse, parseSafe } from "../core/formatter.js";
+import { serialize, parseSafe } from "../core/formatter.js";
 import { toSummary, type Handoff, type HandoffSummary, type HandoffStatus } from "../core/schema.js";
+import { filterHandoffs, applyPatch } from "../utils/filter.js";
+import { slugify } from "../utils/string.js";
 import type { HandoffBackend } from "./backend.js";
 import { id8 } from "../utils/uuid.js";
 import type { AgentctxConfig } from "../utils/config.js";
@@ -52,11 +54,11 @@ export class ObsidianBackend implements HandoffBackend {
     return { ok: false, reason: "Obsidian vault not found and REST API not running" };
   }
 
-  async save(handoff: Handoff): Promise<{ id: string; ref: string }> {
+async save(handoff: Handoff): Promise<{ id: string; ref: string }> {
     await this.probe(); // refresh active tier
     const content = serialize(handoff);
     const shortId = id8(handoff.id);
-    const project = handoff.project || "unknown";
+    const project = slugify(handoff.project || "unknown");
     const filename = `${project}-${slugify(handoff.title)}.${shortId}.md`;
     const vaultRelativePath = `${HANDOFFS_SUBDIR}/${filename}`;
 
@@ -78,12 +80,18 @@ export class ObsidianBackend implements HandoffBackend {
   }
 
   private async saveViaRest(path: string, content: string): Promise<void> {
-    await exec("curl", [
+    const result = await exec("curl", [
       "-sk", "-X", "PUT",
       `https://127.0.0.1:27124/vault/${path}`,
       "-H", "Content-Type: text/markdown",
       "-d", content,
+      "--max-time", "10",
     ]);
+    if (result.code !== 0) {
+      throw new Error(
+        `Obsidian REST API save failed: ${result.stderr || result.stdout.slice(0, 200)}`,
+      );
+    }
   }
 
   private async saveViaCli(path: string, content: string): Promise<void> {
@@ -125,11 +133,9 @@ export class ObsidianBackend implements HandoffBackend {
       return all[0];
     }
 
-    for (const file of files) {
-      if (file.includes(idOrLast)) {
-        return parse(readFileSync(file, "utf-8"));
-      }
-    }
+    const all = files.map((f) => parseSafe(readFileSync(f, "utf-8"))).filter(Boolean) as Handoff[];
+    const match = all.find((h) => h.id === idOrLast || h.id.startsWith(idOrLast));
+    if (match) return match;
     throw new Error(`Handoff not found: ${idOrLast}`);
   }
 
@@ -142,15 +148,16 @@ export class ObsidianBackend implements HandoffBackend {
       const files = JSON.parse(result) as Array<{ name: string }>;
       if (files.length === 0) throw new Error("No handoffs found");
 
-      const handoffs = await Promise.all(
+      const loaded = await Promise.all(
         files.map(async (f) => {
           const r = await execOk("curl", [
             "-sk", `https://127.0.0.1:27124/vault/${HANDOFFS_SUBDIR}/${f.name}`,
           ]);
-          return parse(r);
+          return parseSafe(r);
         }),
       );
-      handoffs.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      const handoffs = loaded.filter(Boolean) as Handoff[];
+      handoffs.sort((a: Handoff, b: Handoff) => b.updated_at.localeCompare(a.updated_at));
       return handoffs[0];
     }
 
@@ -172,23 +179,7 @@ export class ObsidianBackend implements HandoffBackend {
       .map((f) => parseSafe(readFileSync(f, "utf-8")))
       .filter(Boolean) as Handoff[];
 
-    let filtered = handoffs;
-    if (filter?.status) {
-      filtered = filtered.filter((h) => h.status === filter.status);
-    }
-    if (filter?.project) {
-      filtered = filtered.filter((h) => h.project === filter.project);
-    }
-    if (filter?.labels && filter.labels.length > 0) {
-      filtered = filtered.filter((h) =>
-        filter.labels!.some((l) => h.labels.includes(l)),
-      );
-    }
-
-    filtered.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    if (filter?.limit) filtered = filtered.slice(0, filter.limit);
-
-    return filtered.map(toSummary);
+    return filterHandoffs(handoffs, filter);
   }
 
   async update(
@@ -196,11 +187,11 @@ export class ObsidianBackend implements HandoffBackend {
     patch: Partial<Handoff>,
   ): Promise<Handoff> {
     const handoff = await this.load(id);
-    const updated = { ...handoff, ...patch, updated_at: new Date().toISOString() };
+    const updated = applyPatch(handoff, patch);
 
     // Re-save to the same location
     const shortId = id8(updated.id);
-    const project = updated.project || "unknown";
+    const project = slugify(updated.project || "unknown");
     const filename = `${project}-${slugify(updated.title)}.${shortId}.md`;
     const vaultRelativePath = `${HANDOFFS_SUBDIR}/${filename}`;
 
@@ -224,14 +215,6 @@ export class ObsidianBackend implements HandoffBackend {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
-
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 50);
-}
 
 async function findObsidianCli(): Promise<string | null> {
   const candidates = [

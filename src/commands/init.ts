@@ -7,6 +7,11 @@ export function createInitCommand(): Command {
     .description("Initialize agentctx in the current project")
     .option("-b, --backend <name>", "Default backend for this project (fs|github|obsidian)", "fs")
     .action((options) => {
+      const VALID = ["fs", "github", "obsidian"];
+      if (!VALID.includes(options.backend)) {
+        console.error(`Invalid backend: ${options.backend}. Must be one of: ${VALID.join(", ")}`);
+        process.exit(1);
+      }
       const cwd = process.cwd();
       const agentctxDir = pjoin(cwd, ".agentctx");
       const handoffsDir = pjoin(agentctxDir, "handoffs");

@@ -12,7 +12,7 @@ export function createListCommand(): Command {
     .action(async (options) => {
       const cwd = process.cwd();
       const output = await listCommand(cwd, {
-        status: options.all ? undefined : options.status,
+        status: options.all ? undefined : (options.status || "in-progress"),
         labels: options.label,
         backend: options.backend,
         format: options.format,

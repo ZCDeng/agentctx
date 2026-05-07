@@ -16,7 +16,11 @@ export function createLoadCommand(): Command {
     )
     .action(async (options) => {
       const cwd = process.cwd();
-      const idOrLast = options.id || (options.last ? "--last" : "--last");
+      if (!options.id && !options.last) {
+        console.error("Specify --id <uuid> or --last");
+        process.exit(1);
+      }
+      const idOrLast = options.id || "--last";
       const output = await load(cwd, {
         idOrLast,
         backend: options.backend,

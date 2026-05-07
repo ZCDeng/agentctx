@@ -5,26 +5,18 @@ import { HandoffSchema } from "../core/schema.js";
 import { serialize, parse, parseSafe } from "../core/formatter.js";
 import { toSummary } from "../core/schema.js";
 import { uuid, id8 } from "../utils/uuid.js";
+import { slugify } from "../utils/string.js";
+import { filterHandoffs, applyPatch } from "../utils/filter.js";
 import type { HandoffBackend } from "./backend.js";
 
 const HANDOFFS_DIR = ".agentctx/handoffs";
 
 function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}
-
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 50);
+  mkdirSync(dir, { recursive: true });
 }
 
 function filename(project: string, title: string, shortId: string): string {
-  return `${project}-${slugify(title)}.${shortId}.handoff.md`;
+  return `${slugify(project)}-${slugify(title)}.${shortId}.handoff.md`;
 }
 
 function globDir(dir: string): string[] {
@@ -71,12 +63,9 @@ export class FsBackend implements HandoffBackend {
       return handoffs[0];
     }
 
-    const files = globDir(this.dir);
-    for (const file of files) {
-      if (file.includes(idOrLast)) {
-        return parse(readFileSync(file, "utf-8"));
-      }
-    }
+    const all = await this.loadAll();
+    const match = all.find((h) => h.id === idOrLast || h.id.startsWith(idOrLast));
+    if (match) return match;
     throw new Error(`Handoff not found: ${idOrLast}`);
   }
 
@@ -86,23 +75,8 @@ export class FsBackend implements HandoffBackend {
     labels?: string[];
     limit?: number;
   }): Promise<HandoffSummary[]> {
-    let handoffs = await this.loadAll();
-    if (filter?.status) {
-      handoffs = handoffs.filter((h) => h.status === filter.status);
-    }
-    if (filter?.project) {
-      handoffs = handoffs.filter((h) => h.project === filter.project);
-    }
-    if (filter?.labels && filter.labels.length > 0) {
-      handoffs = handoffs.filter((h) =>
-        filter.labels!.some((l) => h.labels.includes(l)),
-      );
-    }
-    handoffs.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    if (filter?.limit) {
-      handoffs = handoffs.slice(0, filter.limit);
-    }
-    return handoffs.map(toSummary);
+    const handoffs = await this.loadAll();
+    return filterHandoffs(handoffs, filter);
   }
 
   async update(
@@ -110,7 +84,7 @@ export class FsBackend implements HandoffBackend {
     patch: Partial<Handoff>,
   ): Promise<Handoff> {
     const handoff = await this.load(id);
-    const updated = { ...handoff, ...patch, updated_at: new Date().toISOString() };
+    const updated = applyPatch(handoff, patch);
     await this.save(updated);
     return updated;
   }

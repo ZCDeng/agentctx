@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export type ExecResult = {
   stdout: string;
   stderr: string;
@@ -9,13 +11,15 @@ export type ExecResult = {
 export function exec(
   command: string,
   args: string[],
-  opts?: { cwd?: string; env?: Record<string, string> },
+  opts?: { cwd?: string; env?: Record<string, string>; timeout?: number },
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
+    const timeout = opts?.timeout ?? DEFAULT_TIMEOUT_MS;
     const child = spawn(command, args, {
       cwd: opts?.cwd,
       env: { ...process.env, ...opts?.env },
       stdio: ["ignore", "pipe", "pipe"],
+      ...(timeout > 0 ? { signal: AbortSignal.timeout(timeout) } : {}),
     });
 
     let stdout = "";

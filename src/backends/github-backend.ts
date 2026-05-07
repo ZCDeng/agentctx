@@ -6,7 +6,6 @@ import { execOk, exec } from "../utils/exec.js";
 import { serialize, parse, parseSafe } from "../core/formatter.js";
 import { toSummary, type Handoff, type HandoffSummary, type HandoffStatus } from "../core/schema.js";
 import type { HandoffBackend } from "./backend.js";
-import { uuid } from "../utils/uuid.js";
 
 const BASE_LABELS = ["agentctx"];
 const STATUS_LABEL_PREFIX = "agentctx:status:";
@@ -43,13 +42,17 @@ export class GitHubBackend implements HandoffBackend {
   }
 
   async probe(): Promise<{ ok: boolean; reason?: string }> {
-    const result = await exec("gh", ["auth", "status"], {
-      env: { GH_REPO: this.repo },
-    });
-    if (result.code !== 0) {
-      return { ok: false, reason: "gh auth status failed — run gh auth login" };
+    try {
+      const result = await exec("gh", ["auth", "status"], {
+        env: { GH_REPO: this.repo },
+      });
+      if (result.code !== 0) {
+        return { ok: false, reason: "gh auth status failed — run gh auth login" };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: "gh CLI not found — install GitHub CLI (gh)" };
     }
-    return { ok: true };
   }
 
   async save(handoff: Handoff): Promise<{ id: string; ref: string }> {
@@ -115,16 +118,26 @@ export class GitHubBackend implements HandoffBackend {
   }
 
   private async loadByNumber(num: number): Promise<Handoff> {
-    const raw = await execOk("gh", [
-      "issue", "view", String(num),
-      "--json", "body,title,labels,updatedAt",
-    ]);
-    const issue = JSON.parse(raw);
-    const parsed = parse(issue.body);
-    return {
-      ...parsed,
-      updated_at: issue.updatedAt,
-    };
+    try {
+      const raw = await execOk("gh", [
+        "issue", "view", String(num),
+        "--json", "body,title,labels,updatedAt",
+      ]);
+      const issue = JSON.parse(raw);
+      const parsed = parseSafe(issue.body || "");
+      if (!parsed) {
+        throw new Error(`Handoff not found: issue #${num} has invalid or empty body`);
+      }
+      return {
+        ...parsed,
+        updated_at: issue.updatedAt,
+      };
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error(`Handoff not found: issue #${num} — failed to parse GitHub response`);
+      }
+      throw err;
+    }
   }
 
   async list(filter?: {
@@ -234,8 +247,8 @@ export class GitHubBackend implements HandoffBackend {
         "--json", "number,body",
       ]);
       return JSON.parse(raw) as Array<{ number: number; body?: string }>;
-    } catch {
-      return [];
+    } catch (err) {
+      throw new Error(`Failed to list handoffs from GitHub: ${err instanceof Error ? err.message : "unknown error"}`);
     }
   }
 }

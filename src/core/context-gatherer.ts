@@ -1,6 +1,6 @@
-import { basename } from "node:path";
+import { basename, join as pjoin } from "node:path";
 import { homedir } from "node:os";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execOk } from "../utils/exec.js";
 
 export type GitContext = {
@@ -11,22 +11,29 @@ export type GitContext = {
 
 export async function gatherGitContext(cwd: string): Promise<GitContext> {
   try {
-    const [branch, commit, status] = await Promise.all([
+    const [rawBranch, commit, status] = await Promise.all([
       execOk("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd }).catch(() => ""),
       execOk("git", ["rev-parse", "--short", "HEAD"], { cwd }).catch(() => ""),
       execOk("git", ["status", "--porcelain"], { cwd }).catch(() => ""),
     ]);
 
+    const branch = rawBranch === "HEAD" ? undefined : rawBranch || undefined;
+
     const filesModified = status
       ? status
           .split("\n")
           .filter(Boolean)
-          .map((line) => line.slice(3).trim())
+          .map((line) => {
+            // porcelain format: XY filename or XY oldname -> newname
+            const content = line.slice(3).trim();
+            const arrowIdx = content.indexOf(" -> ");
+            return arrowIdx > 0 ? content.slice(arrowIdx + 4).trim() : content;
+          })
           .filter(Boolean)
       : [];
 
     return {
-      branch: branch || undefined,
+      branch,
       commit: commit || undefined,
       filesModified,
     };
@@ -90,8 +97,8 @@ async function detectCodexSessionId(): Promise<string | undefined> {
 
 export function detectProject(cwd: string): string {
   try {
-    const { name } = require(`${cwd}/package.json`) as { name?: string };
-    if (name) return name;
+    const pkg = JSON.parse(readFileSync(pjoin(cwd, "package.json"), "utf-8")) as { name?: string };
+    if (pkg.name) return pkg.name;
   } catch {
     // no package.json
   }

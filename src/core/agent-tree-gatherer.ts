@@ -101,18 +101,19 @@ async function queryCodexThread(
 ): Promise<{ role?: string; nickname?: string; model?: string; tokens?: number } | null> {
   try {
     const output = await execOk("sqlite3", [
-      "-readonly",
+      "-readonly", "-json",
       dbPath,
       "SELECT agent_role, agent_nickname, model, tokens_used FROM threads WHERE id = ?",
       threadId,
     ]);
-    const parts = output.trim().split("|");
-    if (parts.length < 4 || !output.trim()) return null;
+    const rows = JSON.parse(output);
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const row = rows[0];
     return {
-      role: parts[0] || undefined,
-      nickname: parts[1] || undefined,
-      model: parts[2] || undefined,
-      tokens: parts[3] ? Number(parts[3]) : undefined,
+      role: row.agent_role || undefined,
+      nickname: row.agent_nickname || undefined,
+      model: row.model || undefined,
+      tokens: row.tokens_used != null ? Number(row.tokens_used) : undefined,
     };
   } catch {
     return null;
