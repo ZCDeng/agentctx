@@ -6,7 +6,7 @@ Claude Code, Codex CLI, Cursor, Windsurf, Gemini CLI, and other AI coding agents
 ## Install
 
 ```bash
-npm install -g agentctx
+npm install -g cross-agent-handoff
 ```
 
 Or from source:

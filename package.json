@@ -1,13 +1,16 @@
 {
-  "name": "agentctx",
+  "name": "cross-agent-handoff",
   "version": "0.1.0",
   "description": "Cross-AI-client task handoff CLI. Save and restore task context between Claude Code, Codex, Cursor, and other AI coding agents.",
   "license": "MIT",
   "author": "ZCDeng",
-  "repository": "https://github.com/ZCDeng/agentctx",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZCDeng/agentctx.git"
+  },
   "type": "module",
   "bin": {
-    "agentctx": "./dist/cli.js"
+    "agentctx": "dist/cli.js"
   },
   "files": [
     "dist/",
