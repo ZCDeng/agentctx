@@ -1,6 +1,7 @@
 import type { HandoffBackend } from "./backend.js";
 import { FsBackend } from "./fs-backend.js";
 import { GitHubBackend } from "./github-backend.js";
+import { ObsidianBackend, detectVaultPath } from "./obsidian-backend.js";
 import { exec } from "../utils/exec.js";
 import type { AgentctxConfig } from "../utils/config.js";
 
@@ -75,8 +76,23 @@ async function createBackend(
     }
 
     case "obsidian": {
-      // Obsidian not yet implemented, skip probe
-      return null;
+      const vaultPath = detectVaultPath(config);
+      if (!vaultPath) {
+        if (config.defaultBackend === "obsidian") {
+          console.error("[agentctx] No Obsidian vault found. Set obsidianVault in config.");
+        }
+        return null;
+      }
+      const backend = new ObsidianBackend(vaultPath);
+      const probe = await backend.probe();
+      if (!probe.ok) {
+        if (config.defaultBackend === "obsidian") {
+          console.error(`[agentctx] Obsidian: ${probe.reason}`);
+        }
+        return null;
+      }
+      console.error(`[agentctx] Obsidian using tier: ${(probe as { tier?: string }).tier || "fs"}`);
+      return backend;
     }
 
     default:

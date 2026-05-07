@@ -30,7 +30,7 @@ agentctx load --last --format context-prompt      # restore in any AI client
 |---------|---------|----------|
 | `fs` (default) | `.agentctx/handoffs/*.handoff.md` | Single machine, zero deps |
 | `github` | GitHub Issues via `gh` CLI | Cross-machine, team collaboration |
-| `obsidian` | Obsidian vault via REST API | Obsidian-powered knowledge base |
+| `obsidian` | Obsidian vault (REST → CLI → fs tiers) | Obsidian knowledge base |
 
 Backends auto-detect availability and fall back to `fs` silently.
 
